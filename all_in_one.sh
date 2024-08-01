@@ -26,6 +26,8 @@ export PATH
 DATE_VERSION="v1.6.8-2024_07_21_16_14"
 #
 # ——————————————————————————————————————————————————————————————————————————————————
+amilys_embyserver_latest_version=4.8.8.0
+# ——————————————————————————————————————————————————————————————————————————————————
 
 Sky_Blue="\e[36m"
 Blue="\033[34m"
@@ -564,7 +566,7 @@ function check_quark_cookie() {
     if [[ ! -f "${CONFIG_DIR}/quark_cookie.txt" ]] && [[ ! -s "${CONFIG_DIR}/quark_cookie.txt" ]]; then
         return 1
     fi
-    local cookie user_agent url headers response status state_url sign_daily_reward sign_daily_reward_mb
+    local cookie user_agent url headers response status state_url sign_daily_reward sign_daily_reward_mb url2 response2 member member_type vip_88
     cookie=$(head -n1 "${CONFIG_DIR}/quark_cookie.txt")
     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) quark-cloud-drive/2.5.20 Chrome/100.0.4896.160 Electron/18.3.5.4-b478491100 Safari/537.36 Channel/pckk_other_ch"
     url="https://drive-pc.quark.cn/1/clouddrive/config?pr=ucpro&fr=pc&uc_param_str="
@@ -575,7 +577,22 @@ function check_quark_cookie() {
         ERROR "无效夸克 Cookie"
         return 1
     elif [ "$status" == "200" ]; then
-        INFO "有效夸克 Cookie"
+        url2="https://drive-pc.quark.cn/1/clouddrive/member?pr=ucpro&fr=pc&uc_param_str=&fetch_subscribe=true&_ch=home&fetch_identity=true"
+        response2=$(curl -s -H "$headers" "$url2")
+        member=$(echo $response2 | grep -o '"member_type":"[^"]*"' | sed 's/"member_type":"\(.*\)"/\1/')
+        if [ $member == 'EXP_SVIP' ] || [ $member == 'SVIP' ]; then
+            vip_88=$(echo $response2 | grep -o '"vip88_new":[t|f]' | cut -f2 -d:)
+            if [ $vip_88 == 't' ]; then
+                member_type="88VIP会员"
+            else
+                member_type="SVIP会员"
+            fi
+        elif [ $member == 'NORMAL' ]; then
+            member_type="普通用户"
+        else
+            member_type="${member//\"/}会员"
+        fi
+        INFO "有效夸克 Cookie，欢迎你${member_type}"
         state_url="https://drive-m.quark.cn/1/clouddrive/capacity/growth/info?pr=ucpro&fr=pc&uc_param_str="
         response=$(curl -s -H "$headers" "$state_url")
         sign_daily_reward=$(echo "$response" | cut -f6 -d\{ | cut -f4 -d: | cut -f1 -d,)
@@ -648,6 +665,67 @@ function check_115_cookie() {
         ERROR "请求失败，请检查 Cookie 或网络连接是否正确。"
         return 1
     fi
+
+}
+
+function qrcode_aliyunpan_tvtoken() {
+
+    INFO "阿里云盘 TV Token 配置"
+    local config_dir local_ip
+    docker_pull ddsderek/xiaoya-glue:python
+    config_dir="$(docker inspect --format='{{range $v,$conf := .Mounts}}{{$conf.Source}}:{{$conf.Destination}}{{$conf.Type}}~{{end}}' "$(cat ${DDSREM_CONFIG_DIR}/container_name/xiaoya_alist_name.txt)" | tr '~' '\n' | grep bind | sed 's/bind//g' | grep ":/data$" | awk -F: '{print $1}')"
+    if [ -n "${config_dir}" ]; then
+        if [[ "${OSNAME}" = "macos" ]]; then
+            local_ip=$(ifconfig "$(route -n get default | grep interface | awk -F ':' '{print$2}' | awk '{$1=$1};1')" | grep 'inet ' | awk '{print$2}')
+        else
+            local_ip=$(ip address | grep inet | grep -v 172.17 | grep -v 127.0.0.1 | grep -v inet6 | awk '{print $2}' | sed 's/addr://' | head -n1 | cut -f1 -d"/")
+        fi
+        if [ -z "${local_ip}" ]; then
+            local_ip="小雅服务器IP"
+        fi
+        INFO "请浏览器访问 http://${local_ip}:34256 并使用阿里云盘APP扫描二维码！"
+        docker run -i --rm \
+            -v "$config_dir:/data" \
+            -e LANG=C.UTF-8 \
+            --net=host \
+            ddsderek/xiaoya-glue:python \
+            /aliyuntvtoken/alitoken2.py
+        INFO "清理镜像中..."
+        docker rmi ddsderek/xiaoya-glue:python > /dev/null 2>&1
+        INFO "开始更新小雅容器..."
+        container_update "$(cat ${DDSREM_CONFIG_DIR}/container_name/xiaoya_alist_name.txt)"
+        INFO "操作全部完成！"
+    else
+        ERROR "小雅配置文件目录获取失败咯！请检查小雅容器是否已创建！"
+        exit 1
+    fi
+
+}
+
+function qrcode_115_cookie() { # get_config_dir
+
+    INFO "115 Cookie 扫码获取"
+    local local_ip
+    INFO "拉取镜像中..."
+    docker_pull ddsderek/xiaoya-glue:python > /dev/null
+    if [[ "${OSNAME}" = "macos" ]]; then
+        local_ip=$(ifconfig "$(route -n get default | grep interface | awk -F ':' '{print$2}' | awk '{$1=$1};1')" | grep 'inet ' | awk '{print$2}')
+    else
+        local_ip=$(ip address | grep inet | grep -v 172.17 | grep -v 127.0.0.1 | grep -v inet6 | awk '{print $2}' | sed 's/addr://' | head -n1 | cut -f1 -d"/")
+    fi
+    if [ -z "${local_ip}" ]; then
+        local_ip="小雅服务器IP"
+    fi
+    INFO "请浏览器访问 http://${local_ip}:34256 并使用阿里云盘APP扫描二维码！"
+    docker run -i --rm \
+        -v "${CONFIG_DIR}:/data" \
+        -e LANG=C.UTF-8 \
+        --net=host \
+        ddsderek/xiaoya-glue:python \
+        /115cookie/115cookie.py
+    INFO "清理镜像中..."
+    docker rmi ddsderek/xiaoya-glue:python > /dev/null 2>&1
+    INFO "操作全部完成！"
 
 }
 
@@ -848,21 +926,29 @@ function install_xiaoya_alist() {
         [[ -z "${choose_115_cookie}" ]] && choose_115_cookie="n"
         if [[ ${choose_115_cookie} == [Yy] ]]; then
             touch ${CONFIG_DIR}/115_cookie.txt
-            while true; do
-                INFO "输入你的 115 Cookie"
-                read -erp "Cookie:" set_115_cookie
-                echo -e "${set_115_cookie}" > ${CONFIG_DIR}/115_cookie.txt
-                if check_115_cookie; then
-                    break
-                fi
-            done
+            qrcode_115_cookie
+            if ! check_115_cookie; then
+                WARN "扫码获取115 Cookie 失败，请手动获取！"
+                while true; do
+                    INFO "输入你的 115 Cookie"
+                    read -erp "Cookie:" set_115_cookie
+                    echo -e "${set_115_cookie}" > ${CONFIG_DIR}/115_cookie.txt
+                    if check_115_cookie; then
+                        break
+                    fi
+                done
+            fi
         fi
     fi
 
-    if command -v ifconfig > /dev/null 2>&1; then
-        localip=$(ifconfig -a | grep inet | grep -v 172.17 | grep -v 127.0.0.1 | grep -v inet6 | awk '{print $2}' | sed 's/addr://' | head -n1)
+    if [[ "${OSNAME}" = "macos" ]]; then
+        localip=$(ifconfig "$(route -n get default | grep interface | awk -F ':' '{print$2}' | awk '{$1=$1};1')" | grep 'inet ' | awk '{print$2}')
     else
-        localip=$(ip address | grep inet | grep -v 172.17 | grep -v 127.0.0.1 | grep -v inet6 | awk '{print $2}' | sed 's/addr://' | head -n1 | cut -f1 -d"/")
+        if command -v ifconfig > /dev/null 2>&1; then
+            localip=$(ifconfig -a | grep inet | grep -v 172.17 | grep -v 127.0.0.1 | grep -v inet6 | awk '{print $2}' | sed 's/addr://' | head -n1)
+        else
+            localip=$(ip address | grep inet | grep -v 172.17 | grep -v 127.0.0.1 | grep -v inet6 | awk '{print $2}' | sed 's/addr://' | head -n1 | cut -f1 -d"/")
+        fi
     fi
     INFO "本地IP：${localip}"
 
@@ -2580,8 +2666,25 @@ function get_xiaoya_hosts() { # 调用这个函数必须设置 $MODE 此变量
         if [[ "$response" == "302" || "$response" == "200" ]]; then
             INFO "hosts 文件设置正确，本机可以正常访问小雅容器！"
         else
-            ERROR "hosts 文件设置错误，本机无法正常访问小雅容器！"
-            exit 1
+            if [[ "${OSNAME}" = "macos" ]]; then
+                localip=$(ifconfig "$(route -n get default | grep interface | awk -F ':' '{print$2}' | awk '{$1=$1};1')" | grep 'inet ' | awk '{print$2}')
+            else
+                if command -v ifconfig > /dev/null 2>&1; then
+                    localip=$(ifconfig -a | grep inet | grep -v 172.17 | grep -v 127.0.0.1 | grep -v inet6 | awk '{print $2}' | sed 's/addr://' | head -n1)
+                else
+                    localip=$(ip address | grep inet | grep -v 172.17 | grep -v 127.0.0.1 | grep -v inet6 | awk '{print $2}' | sed 's/addr://' | head -n1 | cut -f1 -d"/")
+                fi
+            fi
+            INFO "尝试使用本机IP：${localip}"
+            response="$(curl -s -o /dev/null -w '%{http_code}' http://${localip}:5678)"
+            if [[ "$response" == "302" || "$response" == "200" ]]; then
+                sedsh '/xiaoya.host/d' ${HOSTS_FILE_PATH}
+                echo -e "$localip\txiaoya.host\n" >> ${HOSTS_FILE_PATH}
+                INFO "hosts 文件设置成功，本机可以正常访问小雅容器！"
+            else
+                ERROR "hosts 文件设置错误，本机无法正常访问小雅容器！"
+                exit 1
+            fi
         fi
     fi
 
@@ -2597,7 +2700,11 @@ function install_emby_xiaoya_all_emby() {
             exit 1
         fi
     else
-        ERROR "Emby config 出错，请重新下载解压！"
+        if [ ! -f "${MEDIA_DIR}/temp/config.mp4" ]; then
+            ERROR "config.mp4 不存在，请下载此文件并解压！"
+        else
+            ERROR "Emby config 出错，请重新下载解压！"
+        fi
         exit 1
     fi
 
@@ -2691,29 +2798,50 @@ function install_emby_xiaoya_all_emby() {
                     WARN "amilys/embyserver_arm64v8 镜像无法指定版本号，默认拉取 latest 镜像！"
                     IMAGE_VERSION=latest
                     break
+                else
+                    INFO "请选择 Emby 镜像版本 [ 1；4.8.0.56 | 2；latest（${amilys_embyserver_latest_version}） ]（默认 1）"
+                    read -erp "CHOOSE_IMAGE_VERSION:" CHOOSE_IMAGE_VERSION
+                    [[ -z "${CHOOSE_IMAGE_VERSION}" ]] && CHOOSE_IMAGE_VERSION="1"
+                    case ${CHOOSE_IMAGE_VERSION} in
+                    1)
+                        IMAGE_VERSION=4.8.0.56
+                        break
+                        ;;
+                    2)
+                        IMAGE_VERSION=latest
+                        break
+                        ;;
+                    *)
+                        ERROR "输入无效，请重新选择"
+                        ;;
+                    esac
                 fi
-            fi
-            if [ "${CHOOSE_EMBY}" == "install_lovechen_embyserver" ]; then
+            elif [ "${CHOOSE_EMBY}" == "install_lovechen_embyserver" ]; then
                 WARN "lovechen/embyserver 镜像无法指定版本号，默认拉取 4.7.14.0 镜像！"
                 IMAGE_VERSION=4.7.14.0
                 break
+            elif [ "${CHOOSE_EMBY}" == "emby_embyserver" ]; then
+                INFO "请选择 Emby 镜像版本 [ 1；4.8.0.56 | 2；4.8.8.0 | 3；latest ]（默认 1）"
+                read -erp "CHOOSE_IMAGE_VERSION:" CHOOSE_IMAGE_VERSION
+                [[ -z "${CHOOSE_IMAGE_VERSION}" ]] && CHOOSE_IMAGE_VERSION="1"
+                case ${CHOOSE_IMAGE_VERSION} in
+                1)
+                    IMAGE_VERSION=4.8.0.56
+                    break
+                    ;;
+                2)
+                    IMAGE_VERSION=4.8.8.0
+                    break
+                    ;;
+                3)
+                    IMAGE_VERSION=latest
+                    break
+                    ;;
+                *)
+                    ERROR "输入无效，请重新选择"
+                    ;;
+                esac
             fi
-            INFO "请选择 Emby 镜像版本 [ 1；4.8.0.56 | 2；latest ]（默认 1）"
-            read -erp "CHOOSE_IMAGE_VERSION:" CHOOSE_IMAGE_VERSION
-            [[ -z "${CHOOSE_IMAGE_VERSION}" ]] && CHOOSE_IMAGE_VERSION="1"
-            case ${CHOOSE_IMAGE_VERSION} in
-            1)
-                IMAGE_VERSION=4.8.0.56
-                break
-                ;;
-            2)
-                IMAGE_VERSION=latest
-                break
-                ;;
-            *)
-                ERROR "输入无效，请重新选择"
-                ;;
-            esac
         done
 
         case ${CHOOSE_EMBY} in
@@ -3581,7 +3709,21 @@ function main_xiaoya_all_emby() {
     echo -e "——————————————————————————————————————————————————————————————————————————————————"
     echo -e "${Blue}小雅Emby全家桶${Font}\n"
     echo -e "${Red}注意：2024年3月16日后Emby config同步定时任务更换为同步定时更新任务${Font}"
-    echo -e "${Red}用户需先执行一遍 菜单27 删除旧任务，再执行一遍 菜单27 创建新任务${Font}\n"
+    echo -e "${Red}用户需先执行一遍 菜单27 删除旧任务，再执行一遍 菜单27 创建新任务${Font}"
+    if docker container inspect "$(cat ${DDSREM_CONFIG_DIR}/container_name/xiaoya_alist_name.txt)" > /dev/null 2>&1; then
+        local container_status
+        container_status=$(docker inspect --format='{{.State.Status}}' "$(cat ${DDSREM_CONFIG_DIR}/container_name/xiaoya_alist_name.txt)")
+        case "${container_status}" in
+        "running")
+            echo -e "\n"
+            ;;
+        *)
+            echo -e "\n${Red}警告：您的小雅容器未正常启动，请先检查小雅容器后再安装全家桶${Font}\n"
+            ;;
+        esac
+    else
+        echo -e "${Red}\n警告：您未安装小雅容器，请先安装小雅容器后再安装全家桶${Font}\n"
+    fi
     echo -e "1、一键安装Emby全家桶"
     echo -e "2、下载/解压 元数据"
     echo -e "3、安装Emby（可选择版本）"
@@ -3717,7 +3859,21 @@ function main_xiaoya_all_jellyfin() {
     echo -e "${Sky_Blue}Jellyfin 全家桶元数据由 AI老G 更新维护，在此表示感谢！"
     echo -e "Jellyfin 全家桶安装前提条件："
     echo -e "1. 硬盘140G以上（如果无需完整安装则 60G 以上即可）"
-    echo -e "2. 内存3.5G以上空余空间${Font}\n"
+    echo -e "2. 内存3.5G以上空余空间${Font}"
+    if docker container inspect "$(cat ${DDSREM_CONFIG_DIR}/container_name/xiaoya_alist_name.txt)" > /dev/null 2>&1; then
+        local container_status
+        container_status=$(docker inspect --format='{{.State.Status}}' "$(cat ${DDSREM_CONFIG_DIR}/container_name/xiaoya_alist_name.txt)")
+        case "${container_status}" in
+        "running")
+            echo -e "\n"
+            ;;
+        *)
+            echo -e "\n${Red}警告：您的小雅容器未正常启动，请先检查小雅容器后再安装全家桶${Font}\n"
+            ;;
+        esac
+    else
+        echo -e "${Red}\n警告：您未安装小雅容器，请先安装小雅容器后再安装全家桶${Font}\n"
+    fi
     echo -e "1、一键安装Jellyfin全家桶"
     echo -e "2、下载/解压 元数据"
     echo -e "3、安装Jellyfin"
@@ -3928,14 +4084,27 @@ function install_xiaoya_alist_tvbox() {
     read -erp "MEM_OPT:" MEM_OPT
     [[ -z "${MEM_OPT}" ]] && MEM_OPT="-Xmx512M"
 
-    INFO "是否使用内存优化版镜像 [Y/n]（默认 n 不使用）"
-    read -erp "Native:" choose_native
-    [[ -z "${choose_native}" ]] && choose_native="n"
-    if [[ ${choose_native} == [Yy] ]]; then
-        __choose_native="native"
-    else
+    cpu_arch=$(uname -m)
+    INFO "您的CPU架构：${cpu_arch}"
+    case $cpu_arch in
+    "x86_64" | *"amd64"*)
+        INFO "是否使用内存优化版镜像 [Y/n]（默认 n 不使用）"
+        read -erp "Native:" choose_native
+        [[ -z "${choose_native}" ]] && choose_native="n"
+        if [[ ${choose_native} == [Yy] ]]; then
+            __choose_native="native"
+        else
+            __choose_native="latest"
+        fi
+        ;;
+    "aarch64" | *"arm64"* | *"armv8"* | *"arm/v8"*)
         __choose_native="latest"
-    fi
+        ;;
+    *)
+        ERROR "Xiaoya-TVBox 目前只支持 amd64 和 arm64 架构，你的架构是：$cpu_arch"
+        exit 1
+        ;;
+    esac
 
     container_run_extra_parameters=$(cat ${DDSREM_CONFIG_DIR}/container_run_extra_parameters.txt)
     if [ "${container_run_extra_parameters}" == "true" ]; then
@@ -4958,40 +5127,6 @@ function main_other_tools() {
 
 }
 
-function love_aliyun_and_fuck() {
-
-    local config_dir local_ip
-    INFO "AliyunPan ありがとう、あなたのせいで世界は爆発する"
-    docker_pull ddsderek/xiaoya-glue:python
-    config_dir="$(docker inspect --format='{{range $v,$conf := .Mounts}}{{$conf.Source}}:{{$conf.Destination}}{{$conf.Type}}~{{end}}' "$(cat ${DDSREM_CONFIG_DIR}/container_name/xiaoya_alist_name.txt)" | tr '~' '\n' | grep bind | sed 's/bind//g' | grep ":/data$" | awk -F: '{print $1}')"
-    if [ -n "${config_dir}" ]; then
-        if [[ "${OSNAME}" = "macos" ]]; then
-            local_ip=$(ifconfig "$(route -n get default | grep interface | awk -F ':' '{print$2}' | awk '{$1=$1};1')" | grep 'inet ' | awk '{print$2}')
-        else
-            local_ip=$(ip address | grep inet | grep -v 172.17 | grep -v 127.0.0.1 | grep -v inet6 | awk '{print $2}' | sed 's/addr://' | head -n1 | cut -f1 -d"/")
-        fi
-        if [ -z "${local_ip}" ]; then
-            local_ip="小雅服务器IP"
-        fi
-        INFO "请浏览器访问 http://${local_ip}:34256 并使用阿里云盘APP扫描二维码！"
-        docker run -i --rm \
-            -v "$config_dir:/data" \
-            -e LANG=C.UTF-8 \
-            --net=host \
-            ddsderek/xiaoya-glue:python \
-            /alitoken2.py
-        INFO "清理镜像中..."
-        docker rmi ddsderek/xiaoya-glue:python > /dev/null 2>&1
-        INFO "开始更新小雅容器..."
-        container_update "$(cat ${DDSREM_CONFIG_DIR}/container_name/xiaoya_alist_name.txt)"
-        INFO "操作全部完成！"
-    else
-        ERROR "小雅配置文件目录获取失败咯！请检查小雅容器是否已创建！"
-        exit 1
-    fi
-
-}
-
 function main_return() {
 
     local out_tips
@@ -5008,7 +5143,7 @@ function main_return() {
 2、安装/卸载 小雅Emby全家桶                   当前状态：$(judgment_container "${xiaoya_emby_name}")
 3、安装/卸载 小雅Jellyfin全家桶               当前状态：$(judgment_container "${xiaoya_jellyfin_name}")
 4、安装/更新/卸载 小雅助手（xiaoyahelper）    当前状态：$(judgment_container xiaoyakeeper)
-5、安装/更新/卸载 小雅Alist-TVBox             当前状态：$(judgment_container "${xiaoya_tvbox_name}")
+5、安装/更新/卸载 小雅Alist-TVBox（非原版）   当前状态：$(judgment_container "${xiaoya_tvbox_name}")
 6、安装/更新/卸载 Onelist                     当前状态：$(judgment_container "${xiaoya_onelist_name}")
 7、Docker Compose 安装/卸载 小雅及全家桶（实验性功能）
 8、其他工具 | Script info: ${DATE_VERSION} OS: ${_os},${OSNAME},${is64bit}
@@ -5059,7 +5194,8 @@ function main_return() {
         ;;
     fuckaliyun)
         clear
-        love_aliyun_and_fuck
+        INFO "AliyunPan ありがとう、あなたのせいで世界は爆発する"
+        qrcode_aliyunpan_tvtoken
         return_menu "main_return"
         ;;
     0)
